@@ -1,0 +1,342 @@
+###########  I have used a seperate config.yaml file in my project . Lets see how i can use kubernetes 
+## secrets   or configmaps to store that credentials and attach those with pods .Both ways are
+##  very similar . So lets see how to implement configmaps 
+
+######################### my-app-configmap.yaml #################################################### 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: my-app-config
+data:
+  config.yaml: |
+    trainingdata:
+      bucket_name: training-data-bucket-35687
+      destination: https://s3.console.aws.amazon.com/s3/buckets/training-data-bucket-35687?region=ap-south-1&bucketType=general
+      aws_access_key_id: AKIAY5RBCUDQZP4NTM7T
+      aws_secret_access_key: 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
+
+    loggs:
+      bucket_name: loggs35687
+      destination: https://s3.console.aws.amazon.com/s3/buckets/loggs35687?region=ap-south-1
+      aws_access_key_id: AKIAY5RBCUDQZP4NTM7T
+      aws_secret_access_key: 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
+
+    prediction:
+      bucket_name: prediction-data-bucket-35687
+      destination: https://s3.console.aws.amazon.com/s3/buckets/prediction-data-bucket-35687?bucketType=general&region=ap-south-1&tab=properties
+      aws_access_key_id: AKIAY5RBCUDQZP4NTM7T
+      aws_secret_access_key: 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
+
+    models:
+      bucket_name: models35687
+      destination: https://s3.console.aws.amazon.com/s3/buckets/models35687?region=ap-south-1
+      aws_access_key_id: AKIAY5RBCUDQZP4NTM7T
+      aws_secret_access_key: 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
+
+    database:
+      hostname: localhost
+      username: admin
+      password: 0312225679A
+      dbname: myproject
+      endpoint: myproject.c3om4gaouryi.ap-south-1.rds.amazonaws.com
+
+    artifacts:
+      artifacts_dir: artifacts
+      raw_training_dir: raw_training_dir
+      training_validated_local_dir: ValidatedTrainingData
+      training_uploads: training_uploads
+      predicting_uploads: predicting_uploads
+      predicting_uploads_file_name: predicting_uploads.csv
+      predicting_validated_local_dir: ValidatedPredictingData
+
+        
+################################  deployment.yaml ############################
+# deployment.yaml
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-app
+  template:
+    metadata:
+      labels:
+        app: flask-app
+    spec:
+      volumes:
+      - name: config-volume
+        configMap:
+          name: my-app-config
+      containers:
+      - name: flask-app
+        image: your/flask-app   #dockerhubusername/image_name
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config ##this is the path where our config file will be avialble in the container
+
+
+
+
+kubectl apply -f my-app-configmap.yaml
+
+
+
+
+
+
+
+
+
+
+########################################################################
+########################################################################
+##################  Horizontal pod auto scaling  #################################
+########################################################################
+########################################################################
+########################################################################
+
+
+
+#### deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-apache   ## For this we can give any name 
+spec:
+  selector:
+    matchLabels:
+      run: php-apache
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: php-apache
+    spec:
+      containers:
+      - name: php-apache
+        image: k8s.gcr.io/hpa-example
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: 500m
+          requests:
+            cpu: 200m
+
+
+
+ #### service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: php-apache
+  labels:
+    run: php-apache
+spec:
+  ports:
+  - port: 80   # Run the container in port:80 
+  selector:
+    run: php-apache
+
+
+
+
+
+############  Commands ###########
+
+1. Create Deployment and Services  ( we use services to expose our deployment to outside ) 
+
+$ kubectl apply -f deployment.yaml
+$ kubectl apply -f services.yaml  
+$ kubectl get deployments
+$ kubectl get services 
+$ kubectl get pods 
+
+
+2. Setup a metric server
+**** metric server : If we want to monitor a specific pod  (for ex: to know the cpu utilization of a pod ) we need to have the metric server 
+
+Launch RBAC Policies, Services and Certs  = > RBAC policies : We dont want the users to see our commands , so we can use those 
+policies to give access to the users based on their role 
+$ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+Perform a Patching of Metric-Server
+$ kubectl patch deployment metrics-server -n kube-system --type 'json' -p '[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+
+
+
+
+3. To confirm that Metrics Server is running, run the following command:
+$ kubectl get pods -n kube-system -l k8s-app=metrics-server
+
+
+
+4. Perform Autoscaling   (min pod =1 and max pod =10 ) 
+$ kubectl autoscale deployment php-apache --cpu-percent=50 --min=1 --max=10       # php-apache: the name that we gave to our pod 
+
+
+
+5. Get into load-balancer pod
+$ kubectl run -i --tty load-generator --image=busybox /bin/sh
+
+
+
+
+6. Testing load balancer
+while true; do wget -q -O- http://php-apache; done
+
+
+
+
+
+**Delete all Exited Containers**
+docker rm $(docker ps -q -f status=exited)
+
+
+**Delete all Stopped Containers**
+docker rm $(docker ps -a -q)
+
+
+**Delete All Running and Stopped Containers**
+docker stop $(docker ps -a -q)
+docker rm $(docker ps -a -q)
+
+
+**Remove all containers, without any criteria**
+docker container rm $(docker container ps -aq)
+
+
+
+
+
+#### pod-spec.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2022-02-06T03:43:36Z"
+  generateName: php-apache-d4cf67d68-
+  labels:
+    pod-template-hash: d4cf67d68
+    run: php-apache
+  name: php-apache-d4cf67d68-2plb8
+  namespace: default
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: ReplicaSet
+    name: php-apache-d4cf67d68
+    uid: c57cdf09-661d-4874-8b2d-7a92e7cc8506
+  resourceVersion: "1733571"
+  uid: e42d1706-fc8d-4a48-843c-43f967af5344
+spec:
+  containers:
+  - image: k8s.gcr.io/hpa-example
+    imagePullPolicy: Always
+    name: php-apache
+    ports:
+    - containerPort: 80
+      protocol: TCP
+    resources:
+      limits:
+        cpu: 500m
+      requests:
+        cpu: 200m
+    terminationMessagePath: /dev/termination-log
+    terminationMessagePolicy: File
+    volumeMounts:
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      name: kube-api-access-cr67h
+      readOnly: true
+  dnsPolicy: ClusterFirst
+  enableServiceLinks: true
+  nodeName: docker-desktop
+  preemptionPolicy: PreemptLowerPriority
+  priority: 0
+  restartPolicy: Always
+  schedulerName: default-scheduler
+  securityContext: {}
+  serviceAccount: default
+  serviceAccountName: default
+  terminationGracePeriodSeconds: 30
+  tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+    tolerationSeconds: 300
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+    tolerationSeconds: 300
+  volumes:
+  - name: kube-api-access-cr67h
+    projected:
+      defaultMode: 420
+      sources:
+      - serviceAccountToken:
+          expirationSeconds: 3607
+          path: token
+      - configMap:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          name: kube-root-ca.crt
+      - downwardAPI:
+          items:
+          - fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+            path: namespace
+status:
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2022-02-06T03:43:36Z"
+    status: "True"
+    type: Initialized
+  - lastProbeTime: null
+    lastTransitionTime: "2022-02-06T03:43:39Z"
+    status: "True"
+    type: Ready
+  - lastProbeTime: null
+    lastTransitionTime: "2022-02-06T03:43:39Z"
+    status: "True"
+    type: ContainersReady
+  - lastProbeTime: null
+    lastTransitionTime: "2022-02-06T03:43:36Z"
+    status: "True"
+    type: PodScheduled
+  containerStatuses:
+  - containerID: docker://adf6535b33e4af1130ed2de14faafa7591d49157cd5729b233010be4d0205d1a
+    image: k8s.gcr.io/hpa-example:latest
+    imageID: docker-pullable://k8s.gcr.io/hpa-example@sha256:581697a37f0e136db86d6b30392f0db40ce99c8248a7044c770012f4e8491544
+    lastState: {}
+    name: php-apache
+    ready: true
+    restartCount: 0
+    started: true
+    state:
+      running:
+        startedAt: "2022-02-06T03:43:38Z"
+  hostIP: 192.168.65.4
+  phase: Running
+  podIP: 10.1.1.55
+  podIPs:
+  - ip: 10.1.1.55
+  qosClass: Burstable
+  startTime: "2022-02-06T03:43:36Z"
+
+
+
+
+
+
+
+
+
+
+
+
